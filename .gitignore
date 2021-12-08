@@ -1,0 +1,14 @@
+.DS_Store
+.buildpath
+.cache
+.metadata
+.project
+.settings
+.vscode
+.idea
+atlassian*
+nbproject
+*.log
+/build/*
+!/build/.gitkeep
+/vendor
