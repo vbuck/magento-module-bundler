@@ -62,7 +62,7 @@ class Bundler
         $results = [];
         $manifest = [];
 
-        if ($behavior === self::BEHAVIOR_SINGLE_BUNDLE && $outputType === self::OUTPUT_TYPE_COMPOSER) {
+        if ($behavior != self::BEHAVIOR_INDIVIDUAL_BUNDLES && $outputType === self::OUTPUT_TYPE_COMPOSER) {
             echo "Notice: Composer artifact output type always produces a single bundle." . PHP_EOL;
             $behavior = self::BEHAVIOR_INDIVIDUAL_BUNDLES;
         }
