@@ -28,7 +28,12 @@ if ($input['help']) {
 
 try {
     $instance = new \Vbuck\MagentoModuleBundler\Bundler($input['base_path']);
-    $results = $instance->bundle($input['packages'], $input['output_path'], (int) $input['behavior']);
+    $results = $instance->bundle(
+        $input['packages'],
+        $input['output_path'],
+        (int) $input['behavior'],
+        (int) $input['output_type']
+    );
     $hasError = false;
 
     if (empty($results)) {
@@ -63,6 +68,7 @@ function mapInput() {
     $input = [
         'base_path' => rtrim(getcwd(), DS),
         'output_path' => rtrim(getcwd(), DS),
+        'output_type' => null,
         'packages' => [],
         'behavior' => null,
         'help' => false,
@@ -73,6 +79,8 @@ function mapInput() {
             $input['help'] = true;
         } else if ($value === '--single-bundle') {
             $input['behavior'] = \Vbuck\MagentoModuleBundler\Bundler::BEHAVIOR_SINGLE_BUNDLE;
+        } else if ($value === '--composer-artifact') {
+            $input['output_type'] = \Vbuck\MagentoModuleBundler\Bundler::OUTPUT_TYPE_COMPOSER;
         } else {
             preg_match('/^\-\-package=(.*$)/', $value, $match);
             !empty($match[1]) && $input['packages'][] = \trim($match[1], '\'"');
@@ -109,6 +117,7 @@ Options:
     --output-path[=PATH]    Optional path to write your bundles. Defaults to current working directory.
     --package[=SEARCH]      A search string for a package. Can be absolute, relative, package name, wildcard.
     --single-bundle         Optional flag to bundle all matching packages into a single artifact.
+    --composer-artifact     Optional flag to output the bundle as a Composer artifact instead of a Magento bundle.
 
 https://github.com/vbuck/magento-module-bundler
 (c) Rick Buczynski <richard.buczynski@gmail.com>

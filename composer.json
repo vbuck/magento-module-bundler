@@ -16,5 +16,10 @@
         }
     ],
     "minimum-stability": "dev",
-    "require": {}
+    "require": {
+        "php": ">=7.0",
+        "ext-dom": "*",
+        "ext-json": "*",
+        "ext-zip": "*"
+    }
 }

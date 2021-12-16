@@ -40,12 +40,17 @@ I want to automate this process using a single command.
 ### Code Sample
 
     $instance = new \Vbuck\MagentoModuleBundler\Bundler('/path/to/magento/root');
-    $result = $instance->bundle([
-     'vendor/package1',
-     'vendor/package2',
-     '/path/to/other/package',
-     'package-*',
-    ]);
+    $result = $instance->bundle(
+        [
+            'vendor/package1',
+            'vendor/package2',
+            '/path/to/other/package',
+            'package-*',
+        ],
+        '/path/to/output',
+        \Vbuck\MagentoModuleBundler\Bundler::BEHAVIOR_INDIVIDUAL_BUNDLES, // or BEHAVIOR_SINGLE_BUNDLE
+        \Vbuck\MagentoModuleBundler\Bundler::OUTPUT_TYPE_MAGENTO // or OUTPUT_TYPE_COMPOSER
+    );
     
     if ($result[0]->state === true) {
      echo "Module {$result[0]->name} has been bundled"; 
@@ -66,6 +71,7 @@ I want to automate this process using a single command.
         --output-path[=PATH]    Optional path to write your bundles. Defaults to current working directory.
         --package[=SEARCH]      A search string for a package. Can be absolute, relative, package name, wildcard.
         --single-bundle         Optional flag to bundle all matching packages into a single artifact.
+        --composer-artifact     Optional flag to output the bundle as a Composer artifact instead of a Magento bundle.
 
 ## Architectural Principles
 

@@ -20,6 +20,8 @@ class Bundler
     const BEHAVIOR_SINGLE_BUNDLE = 2;
     const ERROR_CREATE_ARCHIVE = 'Failed to create archive for package: %s';
     const ERROR_NO_MODULE = 'Failed to locate module at path: %s';
+    const OUTPUT_TYPE_MAGENTO = 1;
+    const OUTPUT_TYPE_COMPOSER = 2;
     const WARNING_LIB_PATH_DETECTED = 'Lib path detected. It must be registered with your autoloader before use.';
     const WARNING_MISSING_VENDOR_PATH = 'The Composer vendor directory was not found in the given base path.';
 
@@ -48,22 +50,29 @@ class Bundler
      * @param string[] $packages An array of package names, search strings, or paths.
      * @param string $outputPath A directory in which to output the bundles.
      * @param int $behavior How to bundle the paths, where 1 = individual artifacts, 2 = single bundle
+     * @param int $outputType How to output the bundles, where 1 = Magento, 2 = Composer artifact
      * @return array A status report in the order of provided packages.
      */
     public function bundle(
         array $packages = [],
         string $outputPath = '',
-        int $behavior = self::BEHAVIOR_INDIVIDUAL_BUNDLES
+        int $behavior = self::BEHAVIOR_INDIVIDUAL_BUNDLES,
+        int $outputType = self::OUTPUT_TYPE_MAGENTO
     ) : array {
         $results = [];
         $manifest = [];
+
+        if ($behavior === self::BEHAVIOR_SINGLE_BUNDLE && $outputType === self::OUTPUT_TYPE_COMPOSER) {
+            echo "Notice: Composer artifact output type always produces a single bundle." . PHP_EOL;
+            $behavior = self::BEHAVIOR_INDIVIDUAL_BUNDLES;
+        }
 
         foreach ($packages as $key => $search) {
             foreach ($this->expandPath($search) as $sourcePath) {
                 $result = $this->createMutableResult($search, false);
 
-                if (!$this->resolveLibPath($sourcePath, $result)
-                    && !$this->resolveModulePath($sourcePath, $result)) {
+                if (!$this->resolveLibPath($sourcePath, $outputType, $result)
+                    && !$this->resolveModulePath($sourcePath, $outputType, $result)) {
                     throw new \InvalidArgumentException(\sprintf(self::ERROR_NO_MODULE, $sourcePath));
                 }
 
@@ -72,15 +81,16 @@ class Bundler
                 }
 
                 $results[] = $result;
-                $manifest[$result->path] = [
+                $manifest[] = [
                     'source' => $sourcePath,
+                    'target' => $result->path,
                     'result' => $result,
                 ];
             }
         }
 
         try {
-            $this->createBundles($manifest, $behavior, $outputPath);
+            $this->createBundles($manifest, $behavior, $outputPath, $outputType);
             $this->setResultState($results, true);
         } catch (\Exception $error) {
             $this->setResultState($results, false, $error->getMessage(), $error);
@@ -107,16 +117,17 @@ class Bundler
      * @param array $manifest
      * @param int $behavior
      * @param string $outputPath
+     * @param int $outputType
      * @throws \Exception
      */
-    private function createBundles(array $manifest, int $behavior, string $outputPath) : void
+    private function createBundles(array $manifest, int $behavior, string $outputPath, int $outputType) : void
     {
         @\mkdir($outputPath, 0755, true);
         $pathTemplate = \rtrim($outputPath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . '{name}.zip';
         $zip = new \ZipArchive();
         $name = null;
 
-        foreach ($manifest as $target => $info) {
+        foreach ($manifest as $info) {
             if ($behavior === self::BEHAVIOR_INDIVIDUAL_BUNDLES) {
                 $zip = new \ZipArchive();
                 $name = $info['result']->name;
@@ -135,7 +146,7 @@ class Bundler
             }
 
             foreach ($this->generateFileList($info['source']) as $filePath) {
-                $archivePath = \str_replace($info['source'], $target, $filePath);
+                $archivePath = \str_replace($info['source'], $info['target'], $filePath);
 
                 if (\is_dir($filePath)) {
                     $zip->addEmptyDir($archivePath);
@@ -147,6 +158,47 @@ class Bundler
             $zip->close();
             $info['result']->bundlePath = $path;
         }
+
+        if ($outputType === self::OUTPUT_TYPE_COMPOSER) {
+            $this->combineBundles($manifest, $outputPath);
+        }
+    }
+
+    /**
+     * Combine generated bundles into one, and remove the originals.
+     *
+     * @param array $manifest
+     * @param string $outputPath
+     * @throws \Exception
+     */
+    private function combineBundles(array $manifest, string $outputPath) : void
+    {
+        $zip = new \ZipArchive();
+        $path = \rtrim($outputPath, DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR . uniqid('composer_bundle_') . '.zip';
+        $status = $zip->open($path, \ZipArchive::CREATE);
+        $cleanup = [];
+
+        if ($status !== true) {
+            throw new \Exception(
+                \sprintf(self::ERROR_CREATE_ARCHIVE, '[main bundle]'),
+                (int) $status
+            );
+        }
+
+        foreach ($manifest as $info) {
+            $originalBundlePath = $info['result']->bundlePath;
+            $zip->addFile(
+                $originalBundlePath,
+                \basename($originalBundlePath)
+            );
+
+            $cleanup[] = $originalBundlePath;
+            $info['result']->bundlePath = $path;
+        }
+
+        $zip->close();
+        \array_map('unlink', $cleanup);
     }
 
     /**
@@ -241,12 +293,12 @@ class Bundler
     }
 
     /**
-     * Determine whether the given path refers to a Composer meta-package.
+     * Determine whether the given path refers to a Composer meta-package and, if it does, return its name.
      *
-     * @param string $path An absolute path to the package.
-     * @return array
+     * @param string $path An absolute path to the package directory.
+     * @return string|null
      */
-    private function isMetapackage(string $path) : bool
+    private function getMetapackageName(string $path) : ?string
     {
         $configPath = current(
             (array) \glob(
@@ -256,16 +308,16 @@ class Bundler
         );
 
         if (!$configPath || !\is_readable($configPath)) {
-            return false;
+            return null;
         }
 
         $config = (array) @\json_decode(@\file_get_contents($configPath), true);
 
         if (!empty($config['type']) && $config['type'] === 'metapackage') {
-            return true;
+            return $config['name'];
         }
 
-        return false;
+        return null;
     }
 
     /**
@@ -274,10 +326,11 @@ class Bundler
      * Works by reading the Composer file and converting its PSR-4 mapping to a Magento library path for bundling.
      *
      * @param string $path An absolute path to the library source; ex: a 3rd-party SDK
+     * @param int $outputType The output type strategy to apply to the resolved path.
      * @param \stdClass $result The processing result.
      * @return bool
      */
-    private function resolveLibPath(string $path, \stdClass $result) : bool
+    private function resolveLibPath(string $path, int $outputType, \stdClass $result) : bool
     {
         $configPath = current(
             (array) \glob(
@@ -296,9 +349,21 @@ class Bundler
             return false;
         }
 
-        $result->name = \rtrim(\current(\array_keys($config['autoload']['psr-4'])), '\\');
-        $result->path = 'lib' . DIRECTORY_SEPARATOR
-            . \str_replace('\\', DIRECTORY_SEPARATOR, $result->name);
+        switch ($outputType) {
+            case self::OUTPUT_TYPE_COMPOSER:
+                $result->name = \explode('/', $config['name'])[1];
+                $result->path = '';
+                break;
+            case self::OUTPUT_TYPE_MAGENTO:
+            default:
+                $components = \array_filter(
+                    \explode('\\', \current(\array_keys($config['autoload']['psr-4'])))
+                );
+                $result->name = \end($components);
+                $result->path = 'lib' . DIRECTORY_SEPARATOR
+                    . \str_replace('\\', DIRECTORY_SEPARATOR, $result->name);
+        }
+
         $result->message = self::WARNING_LIB_PATH_DETECTED;
         return true;
     }
@@ -307,13 +372,20 @@ class Bundler
      * Resolve the expected module path from the given source path and write it to the result.
      *
      * @param string $path An absolute path to the module source.
+     * @param int $outputType The output type strategy to apply to the resolved path.
      * @param \stdClass $result The processing result.
      * @return bool
      */
-    private function resolveModulePath(string $path, \stdClass $result) : bool
+    private function resolveModulePath(string $path, int $outputType, \stdClass $result) : bool
     {
-        if ($this->isMetapackage($path)) {
-            $result->state = 'skip';
+        if (($name = $this->getMetapackageName($path))) {
+            if ($outputType !== self::OUTPUT_TYPE_COMPOSER) {
+                $result->state = 'skip';
+            }
+
+            $result->name = \explode('/', $name)[1];
+            $result->path = '';
+
             return true;
         }
 
@@ -329,15 +401,39 @@ class Bundler
             return false;
         }
 
+        $composerConfig = (array) @\json_decode(
+            @\file_get_contents(
+                current(
+                    (array) \glob(
+                        \rtrim($path, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
+                        . 'composer.json'
+                    )
+                )
+            ),
+            true
+        );
+
         try {
             $config = new \DOMDocument();
             $config->load($configPath);
             $result->name = $config->getElementsByTagName('module')[0]->getAttribute('name');
-            $moduleName = \explode('_', $result->name);
-            $result->path = 'app' . DIRECTORY_SEPARATOR
-                . 'code' . DIRECTORY_SEPARATOR
-                . $moduleName[0] . DIRECTORY_SEPARATOR
-                . $moduleName[1];
+
+            switch ($outputType) {
+                case self::OUTPUT_TYPE_COMPOSER:
+                    if (!empty($composerConfig['name'])) {
+                        $result->name = \explode('/', $composerConfig['name'])[1];
+                    }
+
+                    $result->path = '';
+                    break;
+                case self::OUTPUT_TYPE_MAGENTO:
+                default:
+                    $moduleName = \explode('_', $result->name);
+                    $result->path = 'app' . DIRECTORY_SEPARATOR
+                        . 'code' . DIRECTORY_SEPARATOR
+                        . $moduleName[0] . DIRECTORY_SEPARATOR
+                        . $moduleName[1];
+            }
 
             return true;
         } catch (\Exception $error) {
