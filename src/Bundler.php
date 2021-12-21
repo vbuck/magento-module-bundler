@@ -146,7 +146,9 @@ class Bundler
             }
 
             foreach ($this->generateFileList($info['source']) as $filePath) {
-                $archivePath = \str_replace($info['source'], $info['target'], $filePath);
+                $archivePath = \ltrim(
+                    \str_replace($info['source'], $info['target'], $filePath), DIRECTORY_SEPARATOR
+                );
 
                 if (\is_dir($filePath)) {
                     $zip->addEmptyDir($archivePath);
