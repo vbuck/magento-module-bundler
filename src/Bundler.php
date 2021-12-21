@@ -265,15 +265,62 @@ class Bundler
                 . 'vendor' . DIRECTORY_SEPARATOR . '*' . DIRECTORY_SEPARATOR . $search;
         }
 
+        /**
+         * Meta-package match
+         *
+         * Original design of the bundler was based on packaging from artifacts in a workspace. Meta-packages are not
+         * tracked in the vendor space. Therefore, if we want to match on them, we need to inspect the lock file.
+         */
+        $lockFilePath = $this->basePath . DIRECTORY_SEPARATOR . 'composer.lock';
+        if (\is_readable($lockFilePath)) {
+            $lockData = \array_merge(
+                ['packages' => []],
+                (array) \json_decode(\file_get_contents($lockFilePath), true)
+            );
+
+            foreach ($lockData['packages'] as $package) {
+                if (empty($package['name'])) {
+                    continue;
+                }
+
+                $pattern = '~^'
+                    . \str_replace('-', '\\-', \str_replace('*', '.+', $search))
+                    . '$~';
+                if (\preg_match($pattern, $package['name']) && $package['type'] == 'metapackage') {
+                    $results[] = $this->createTemporaryPackage($package);
+                }
+            }
+        }
+
         foreach ($tryPaths as $path) {
             if (\file_exists($path)) {
                 $results[] = $path;
             } else if (($matches = \glob($path))) {
-                $results += $matches;
+                $results = array_merge($results, $matches);
             }
         }
 
         return \array_unique($results);
+    }
+
+    /**
+     * Generate a temporary package from
+     *
+     * @param array $package
+     * @return string
+     */
+    private function createTemporaryPackage(array $package) : string
+    {
+        $path = \rtrim(\sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
+            . uniqid('temp_package_');
+
+        \mkdir($path, 0755, true);
+        \file_put_contents(
+            $path . DIRECTORY_SEPARATOR . 'composer.json',
+            \json_encode($package, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES)
+        );
+
+        return $path;
     }
 
     private function generateFileList(string $path, $flags = 0) : array

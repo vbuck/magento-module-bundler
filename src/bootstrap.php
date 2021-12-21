@@ -93,6 +93,10 @@ function mapInput() {
         }
     }
 
+    if (!$input['behavior']) {
+        $input['behavior'] = \Vbuck\MagentoModuleBundler\Bundler::BEHAVIOR_INDIVIDUAL_BUNDLES;
+    }
+
     return $input;
 }
 
