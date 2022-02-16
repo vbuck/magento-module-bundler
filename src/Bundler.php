@@ -144,9 +144,6 @@ class Bundler
                 $name = uniqid('bundle_');
             }
 
-            var_dump($this->generateFileList($info['source'], $exclude));
-            exit;
-
             $path = \str_replace('{name}', $name, $pathTemplate);
             $status = $zip->open($path, \ZipArchive::CREATE);
 
