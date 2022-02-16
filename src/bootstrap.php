@@ -88,7 +88,7 @@ function mapInput() {
             !empty($match[1]) && $input['packages'][] = \trim($match[1], '\'"');
 
             preg_match('/^\-\-exclude=(.*$)/', $value, $match);
-            !empty($match[1]) && $input['excludes'][] = \trim($match[1], '\'"');
+            !empty($match[1]) && $input['exclude'][] = \trim($match[1], '\'"');
 
             preg_match('/^\-\-app\-root=(.*$)/', $value, $match);
             !empty($match[1]) && $input['base_path'] = \trim($match[1], '\'"');
