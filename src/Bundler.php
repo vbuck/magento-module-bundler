@@ -51,13 +51,15 @@ class Bundler
      * @param string $outputPath A directory in which to output the bundles.
      * @param int $behavior How to bundle the paths, where 1 = individual artifacts, 2 = single bundle
      * @param int $outputType How to output the bundles, where 1 = Magento, 2 = Composer artifact
+     * @param string[] $exclude An array of file exclusion patterns.
      * @return array A status report in the order of provided packages.
      */
     public function bundle(
         array $packages = [],
         string $outputPath = '',
         int $behavior = self::BEHAVIOR_INDIVIDUAL_BUNDLES,
-        int $outputType = self::OUTPUT_TYPE_MAGENTO
+        int $outputType = self::OUTPUT_TYPE_MAGENTO,
+        array $exclude = []
     ) : array {
         $results = [];
         $manifest = [];
@@ -90,7 +92,7 @@ class Bundler
         }
 
         try {
-            $this->createBundles($manifest, $behavior, $outputPath, $outputType);
+            $this->createBundles($manifest, $exclude, $behavior, $outputPath, $outputType);
             $this->setResultState($results, true);
         } catch (\Exception $error) {
             $this->setResultState($results, false, $error->getMessage(), $error);
@@ -115,12 +117,19 @@ class Bundler
      * Generate a bundle from the given manifest.
      *
      * @param array $manifest
+     * @param array $exclude
      * @param int $behavior
      * @param string $outputPath
      * @param int $outputType
      * @throws \Exception
      */
-    private function createBundles(array $manifest, int $behavior, string $outputPath, int $outputType) : void
+    private function createBundles(
+        array $manifest,
+        array $exclude,
+        int $behavior,
+        string $outputPath,
+        int $outputType
+    ) : void
     {
         @\mkdir($outputPath, 0755, true);
         $pathTemplate = \rtrim($outputPath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . '{name}.zip';
@@ -135,6 +144,9 @@ class Bundler
                 $name = uniqid('bundle_');
             }
 
+            var_dump($this->generateFileList($info['source'], $exclude));
+            exit;
+
             $path = \str_replace('{name}', $name, $pathTemplate);
             $status = $zip->open($path, \ZipArchive::CREATE);
 
@@ -145,7 +157,7 @@ class Bundler
                 );
             }
 
-            foreach ($this->generateFileList($info['source']) as $filePath) {
+            foreach ($this->generateFileList($info['source'], $exclude) as $filePath) {
                 $archivePath = \ltrim(
                     \str_replace($info['source'], $info['target'], $filePath), DIRECTORY_SEPARATOR
                 );
@@ -325,15 +337,29 @@ class Bundler
         return $path;
     }
 
-    private function generateFileList(string $path, $flags = 0) : array
+    private function generateFileList(string $path, array $exclude = [], $flags = 0) : array
     {
         $result = \glob($path, $flags);
 
-        foreach ($result as $item) {
+        foreach ($result as $index => $item) {
+            if (
+                count(
+                    array_filter(
+                        $exclude,
+                        function ($pattern) use ($item) {
+                            return (bool) \preg_match("~{$pattern}~", $item);
+                        }
+                    )
+                )
+            ) {
+                unset($result[$index]);
+                continue;
+            }
+
             if (\is_dir($item)) {
                 \array_push(
                     $result,
-                    ...$this->generateFileList($item . DIRECTORY_SEPARATOR . '*', $flags)
+                    ...$this->generateFileList($item . DIRECTORY_SEPARATOR . '*', $exclude, $flags)
                 );
             }
         }

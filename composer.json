@@ -3,7 +3,7 @@
     "description": "Module bundling utility. Bundles Magento modules from Composer vendor spaces into ZIP artifacts.",
     "type": "library",
     "license": "MIT",
-    "version": "1.0.0",
+    "version": "1.3.0",
     "autoload": {
         "psr-4": {
             "Vbuck\\MagentoModuleBundler\\": "src/"

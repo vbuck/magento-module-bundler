@@ -32,7 +32,8 @@ try {
         $input['packages'],
         $input['output_path'],
         (int) $input['behavior'],
-        (int) $input['output_type']
+        (int) $input['output_type'],
+        $input['exclude']
     );
     $hasError = false;
 
@@ -70,6 +71,7 @@ function mapInput() {
         'output_path' => rtrim(getcwd(), DS),
         'output_type' => null,
         'packages' => [],
+        'exclude' => [],
         'behavior' => null,
         'help' => false,
     ];
@@ -84,6 +86,9 @@ function mapInput() {
         } else {
             preg_match('/^\-\-package=(.*$)/', $value, $match);
             !empty($match[1]) && $input['packages'][] = \trim($match[1], '\'"');
+
+            preg_match('/^\-\-exclude=(.*$)/', $value, $match);
+            !empty($match[1]) && $input['excludes'][] = \trim($match[1], '\'"');
 
             preg_match('/^\-\-app\-root=(.*$)/', $value, $match);
             !empty($match[1]) && $input['base_path'] = \trim($match[1], '\'"');
@@ -113,6 +118,7 @@ To use:
         --package=vendor/package1 \
         --package=/path/to/other/package \
         --package=package-*
+        --exclude=/some/regex-file-pattern.*
         --single-bundle
         --output-path=/path/to/bundles
 
@@ -120,6 +126,7 @@ Options:
     --app-root[=PATH]       Optional path to a Magento installation. Defaults to current working directory.
     --output-path[=PATH]    Optional path to write your bundles. Defaults to current working directory.
     --package[=SEARCH]      A search string for a package. Can be absolute, relative, package name, wildcard.
+    --exclude[=SEARCH]      Optionally exclude files from the bundle.
     --single-bundle         Optional flag to bundle all matching packages into a single artifact.
     --composer-artifact     Optional flag to output the bundle as a Composer artifact instead of a Magento bundle.
 
