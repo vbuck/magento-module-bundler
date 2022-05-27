@@ -16,6 +16,7 @@ namespace Vbuck\MagentoModuleBundler;
  */
 class Bundler
 {
+    const VERSION = '1.4.0';
     const BEHAVIOR_INDIVIDUAL_BUNDLES = 1;
     const BEHAVIOR_SINGLE_BUNDLE = 2;
     const ERROR_CREATE_ARCHIVE = 'Failed to create archive for package: %s';
@@ -52,6 +53,7 @@ class Bundler
      * @param int $behavior How to bundle the paths, where 1 = individual artifacts, 2 = single bundle
      * @param int $outputType How to output the bundles, where 1 = Magento, 2 = Composer artifact
      * @param string[] $exclude An array of file exclusion patterns.
+     * @param callable[] $callbacks An array of callbacks to use as bundle content processors. Provides two arguments: (1) the file contents, (2) its path
      * @return array A status report in the order of provided packages.
      */
     public function bundle(
@@ -59,7 +61,8 @@ class Bundler
         string $outputPath = '',
         int $behavior = self::BEHAVIOR_INDIVIDUAL_BUNDLES,
         int $outputType = self::OUTPUT_TYPE_MAGENTO,
-        array $exclude = []
+        array $exclude = [],
+        array $callbacks = []
     ) : array {
         $results = [];
         $manifest = [];
@@ -92,7 +95,7 @@ class Bundler
         }
 
         try {
-            $this->createBundles($manifest, $exclude, $behavior, $outputPath, $outputType);
+            $this->createBundles($manifest, $exclude, $behavior, $outputPath, $outputType, $callbacks);
             $this->setResultState($results, true);
         } catch (\Exception $error) {
             $this->setResultState($results, false, $error->getMessage(), $error);
@@ -121,6 +124,7 @@ class Bundler
      * @param int $behavior
      * @param string $outputPath
      * @param int $outputType
+     * @param callable[] $callbacks
      * @throws \Exception
      */
     private function createBundles(
@@ -128,7 +132,8 @@ class Bundler
         array $exclude,
         int $behavior,
         string $outputPath,
-        int $outputType
+        int $outputType,
+        array $callbacks = []
     ) : void
     {
         @\mkdir($outputPath, 0755, true);
@@ -162,7 +167,7 @@ class Bundler
                 if (\is_dir($filePath)) {
                     $zip->addEmptyDir($archivePath);
                 } else {
-                    $zip->addFile($filePath, $archivePath);
+                    $zip->addFromString($archivePath, $this->processFileContents($filePath, $callbacks));
                 }
             }
 
@@ -173,6 +178,29 @@ class Bundler
         if ($outputType === self::OUTPUT_TYPE_COMPOSER) {
             $this->combineBundles($manifest, $outputPath);
         }
+    }
+
+    /**
+     * Process the contents at the given file path by calling registered hooks.
+     *
+     * @param string $path
+     * @param callable[] $callbacks
+     * @return string
+     */
+    private function processFileContents(string $path, array $callbacks = []): string {
+        if (!\file_exists($path)) {
+            return '';
+        }
+
+        $contents = (string) \file_get_contents($path);
+
+        foreach ($callbacks as $callback) {
+            if (\is_callable($callback)) {
+                $contents = (string) call_user_func($callback, $contents, $path);
+            }
+        }
+
+        return $contents;
     }
 
     /**
@@ -315,7 +343,7 @@ class Bundler
     }
 
     /**
-     * Generate a temporary package from
+     * Generate a temporary package from the given definition.
      *
      * @param array $package
      * @return string
@@ -324,6 +352,15 @@ class Bundler
     {
         $path = \rtrim(\sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
             . uniqid('temp_package_');
+
+        /**
+         * When generating bundles using Composer lock files, extraneous information may be present, such as hashes and
+         * timestamps of the last update. These elements must be removed to recreate a valid package definition.
+         */
+        unset($package['source']);
+        unset($package['dist']);
+        unset($package['notification-url']);
+        unset($package['time']);
 
         \mkdir($path, 0755, true);
         \file_put_contents(

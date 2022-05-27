@@ -26,6 +26,11 @@ if ($input['help']) {
     exit(0);
 }
 
+if ($input['version']) {
+    showVersion();
+    exit(0);
+}
+
 try {
     $instance = new \Vbuck\MagentoModuleBundler\Bundler($input['base_path']);
     $results = $instance->bundle(
@@ -74,11 +79,14 @@ function mapInput() {
         'exclude' => [],
         'behavior' => null,
         'help' => false,
+        'version' => false,
     ];
 
     foreach ($argv as $value) {
         if ($value === '--help') {
             $input['help'] = true;
+        } else if ($value === '--version') {
+            $input['version'] = true;
         } else if ($value === '--single-bundle') {
             $input['behavior'] = \Vbuck\MagentoModuleBundler\Bundler::BEHAVIOR_SINGLE_BUNDLE;
         } else if ($value === '--composer-artifact') {
@@ -134,4 +142,9 @@ https://github.com/vbuck/magento-module-bundler
 (c) Rick Buczynski <richard.buczynski@gmail.com>
 
 EOF;
+}
+
+function showVersion() {
+    echo \Vbuck\MagentoModuleBundler\Bundler::VERSION . PHP_EOL;
+    exit(0);
 }
